@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Virtual env
+.venv/
+
+# Data (ignore CSVs only, not the folder)
+data/raw/*.csv
+data/processed/*.csv
+
+# Artifacts / models
+artifacts/
+models/
+
+# OS
+.DS_Store
+Thumbs.db
