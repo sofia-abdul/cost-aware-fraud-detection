@@ -1,270 +1,183 @@
+# Cost-Aware Fraud Ranking System
 
-# Fraud Risk Review Console
+A fraud detection system framed as a cost-sensitive ranking problem under operational review constraints.
 
-A cost-optimized fraud scoring pipeline and batch review dashboard built with scikit-learn and Streamlit.
-
-This project focuses on operational realism rather than leaderboard metrics. It demonstrates:
-
-* Business-aligned threshold selection (expected-cost minimization)
-* Schema enforcement at inference time
-* Versioned model artifacts with reproducibility metadata
-* Batch review workflow with decision capture
-* Automated tests
-* Optional containerized deployment
+This repository focuses on practical ML engineering considerations: asymmetric business cost, limited review capacity, calibrated probabilities, and prediction drift monitoring.
 
 ---
 
 ## Problem Framing
 
-Fraud detection systems operate under asymmetric costs:
+Fraud detection in production is not a pure classification task.
 
-* False positives create operational expense through manual review.
-* False negatives represent direct financial loss.
+Key constraints:
 
-Instead of optimizing accuracy or F1, this system selects a decision threshold that minimizes:
+- Severe class imbalance (~0.17% fraud rate)
+- Asymmetric cost of false positives vs missed fraud
+- Limited manual review capacity
+- Need for probability calibration
+- Risk of distribution shift over time
 
-```
-Expected Cost =
-  (False Positives × review cost)
-+ (False Negatives × missed fraud cost)
-```
-
-Cost assumptions are configurable in `src/config.py`.
+This system treats fraud detection as a ranking problem where decisions are made based on cost and operational limits.
 
 ---
 
-## Data Contract
+## Dataset
 
-The model expects the Credit Card dataset schema:
+This project uses the publicly available **Credit Card Fraud Detection** dataset:
 
-### Required Columns
+Andrea Dal Pozzolo et al., Université Libre de Bruxelles (ULB)  
+Kaggle: https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud  
 
-* `Time`
-* `V1`–`V28`
-* `Amount`
+Dataset characteristics:
 
-### Optional
+- 284,807 transactions  
+- 492 fraud cases (~0.172%)  
+- PCA-transformed features (V1–V28)  
+- Highly imbalanced  
 
-* `Class` (used only for evaluation and cost estimation)
+Place the dataset at:
 
-`V1–V28` are PCA-transformed components included in the dataset. They cannot be derived from raw transaction logs without the original preprocessing pipeline. This is a deliberate constraint of the dataset; schema validation is enforced at inference time to prevent silent scoring errors.
+data/raw/creditcard.csv
 
----
-
-## Architecture
-
-### Training Pipeline
-
-```
-raw dataset
-  → FeatureEngineer (sklearn transformer)
-  → model (Logistic Regression / Random Forest / calibrated variants)
-  → threshold sweep (cost-based)
-  → versioned artifacts
-```
-
-### Inference Pipeline
-
-```
-input batch
-  → schema validation
-  → feature alignment
-  → probability scoring
-  → threshold decision
-  → review dashboard
-```
+The dataset is not committed to this repository.
 
 ---
 
-## Design Rationale
+## Approach
 
-This project is structured around practical failure modes seen in ML systems.
+### Models
 
-### Why cost-based thresholding (not F1)
+- Logistic Regression (class-weighted baseline)
+- Calibrated Random Forest
 
-Fraud datasets are extremely imbalanced. A threshold optimized for generic metrics (accuracy/F1) often produces an operationally unusable review load or misses too much fraud. Selecting the threshold by expected cost explicitly encodes the business tradeoff between:
+### Evaluation
 
-* Review workload (false positives)
-* Missed fraud loss (false negatives)
+- PR-AUC and ROC-AUC
+- Cost-sensitive threshold optimisation
+- Top-k review simulation
+- Precision@K and Recall@K
+- Baseline prediction logging for drift comparison
 
-This makes the decision boundary interpretable in terms of operational impact.
+### Decision Policies
 
-### Why the pipeline embeds feature engineering
+Two decision strategies are supported:
 
-Feature engineering is included inside the scikit-learn pipeline rather than performed as a separate preprocessing step. This reduces training/serving skew and makes the artifact self-contained: the same transformation is applied during training and inference.
+1. **Threshold-based**
 
-### Why strict schema validation exists
+   Minimises expected cost:
 
-Schema mismatch is a common source of silent model failures (extra columns, missing columns, wrong ordering). The inference layer:
+   cost = FP_cost × FP + FN_cost × FN
 
-* Drops the label column (`Class`) when present
-* Validates the feature set against training-time expectations
-* Aligns column ordering before scoring
+2. **Top-k review**
 
-The goal is to fail fast with a clear error rather than produce incorrect outputs.
-
-### Why probability calibration is relevant
-
-For threshold-based decisions, calibrated probabilities are valuable: they make “0.2 means ~20% risk” closer to true. Calibration is included as an optional model candidate to improve decision quality and make threshold tuning more meaningful.
+   Flags the highest-risk k% of transactions to simulate fixed review capacity.
 
 ---
 
-## Dashboard Capabilities
+## Drift Monitoring
 
-The dashboard simulates a fraud operations workflow:
+During training, baseline prediction statistics are logged.
 
-* Risk distribution visualization for the scored batch
-* Adjustable decision threshold with live KPI updates
-* Review queue filtering (bucket, probability range, flagged-only)
-* Human decision capture (Approve / Reject / Escalate)
-* Export of scored batches and review decisions
-* Threshold sensitivity analysis and calibration table when labels are available
+At inference time, the Streamlit console compares:
 
-The interface is designed as a batch review tool rather than a model demo.
+- Baseline mean predicted probability
+- Current batch mean predicted probability
+- Delta between baseline and current batch
+
+Significant deviations are surfaced as drift warnings.
 
 ---
 
-## Reproducibility
-
-Dependencies are pinned in `requirements.txt`.
-
-Each training run stores:
-
-* Model type
-* Selected threshold
-* Expected cost
-* PR-AUC
-* Python and scikit-learn versions
-* Unique run identifier
-
-Artifacts are saved under:
+## Repository Structure
 
 ```
-artifacts/runs/<run_id>/
+.
+├── app/                # Streamlit review console
+├── src/
+│   ├── features.py     # Feature engineering
+│   ├── risk.py         # Cost and ranking logic
+│   ├── evaluation.py   # Metrics and analysis utilities
+│   ├── inference.py    # Model loading and schema validation
+│   └── config.py       # Central configuration
+├── tests/              # Unit tests
+├── train.py            # Training entrypoint
+├── notebooks/          # Exploratory analysis
+└── reports/            # Figures / screenshots
 ```
 
-The latest model is copied to:
+The project separates feature engineering, business logic, evaluation logic, and UI concerns.
+
+---
+
+## Training
+
+Run:
 
 ```
-artifacts/model.joblib
-artifacts/metrics.json
+python train.py
+```
+
+Training performs:
+
+- Stratified train/test split
+- Model comparison
+- Cost-sensitive threshold sweep
+- Ranking metric evaluation
+- Baseline statistic logging
+
+Artifacts are written to:
+
+```
+artifacts/runs/
 ```
 
 ---
 
-## Project Structure
+## Review Console
 
-```
-fraud-risk/
-│
-├── app/                 # Streamlit dashboard
-├── src/                 # Core training and inference logic
-├── tests/               # Unit tests
-├── data/                # Dataset and decision logs
-├── artifacts/           # Versioned model artifacts
-├── requirements.txt
-├── Dockerfile
-├── pytest.ini
-└── README.md
-```
-
----
-
-## Setup
-
-Install dependencies:
-
-```
-pip install -r requirements.txt
-```
-
----
-
-## Train
-
-```
-python -m src.train
-```
-
----
-
-## Run Dashboard
+Launch:
 
 ```
 python -m streamlit run app/streamlit_app.py
 ```
 
-The dashboard loads the default dataset automatically. Uploading a CSV allows scoring a new batch with the same schema.
+The console supports:
+
+- Threshold vs Top-k mode
+- Batch CSV upload
+- Cost estimation (if labels present)
+- Risk bucket distribution
+- Transaction inspection
+- Threshold sensitivity analysis
+- Prediction drift panel
 
 ---
 
-## Run Tests
+## Testing
+
+Core logic is unit tested:
+
+- Cost computation
+- Ranking policy behaviour
+- Feature engineering contracts
+
+Run:
 
 ```
 pytest
 ```
 
-Tests validate:
-
-* Schema enforcement and alignment
-* Target column handling
-* Risk bucketing boundaries
-* Failure cases for malformed input
-
 ---
 
-## Docker
+## Scope
 
-Build:
+This repository prioritises production-oriented ML design over model novelty.
 
-```
-docker build -t fraud-risk .
-```
+Focus areas:
 
-Run:
-
-```
-docker run -p 8501:8501 fraud-risk
-```
-
-Open:
-
-```
-http://localhost:8501
-```
-
----
-
-## Operational Notes
-
-This project models batch scoring and review. In a production setting, additional components would typically be required:
-
-* Data ingestion and schema contracts upstream
-* Monitoring for drift and review load over time
-* Alerting on distribution shifts or sudden threshold instability
-* Decision persistence in a database with auditability
-* A real-time scoring API or streaming pipeline (if required by the use case)
-
----
-
-## Limitations
-
-* The model is tied to a specific dataset schema.
-* Pickled scikit-learn artifacts are version-sensitive.
-* No streaming inference pipeline is implemented.
-* No automated drift detection is included.
-* Interpretability is limited due to PCA-transformed input features.
-
-This project focuses on batch scoring and operational review simulation.
-
----
-
-## Potential Extensions
-
-* Probability calibration curves and reliability plots
-* Batch-level drift monitoring and alerting
-* Database-backed decision storage
-* Real-time inference API
-* Feature store abstraction
-
----
+- Cost-aware decision logic
+- Ranking under capacity constraints
+- Calibration
+- Basic lifecycle monitoring
+- Modular code organisation
