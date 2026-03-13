@@ -1,9 +1,11 @@
 from pathlib import Path
 
-DATA_DIR = Path("data")
+BASE_DIR = Path(__file__).resolve().parents[1]
+
+DATA_DIR = BASE_DIR / "data"
 RAW_PATH = DATA_DIR / "raw" / "creditcard.csv"
 
-ARTIFACT_DIR = Path("artifacts")
+ARTIFACT_DIR = BASE_DIR / "artifacts"
 RUNS_DIR = ARTIFACT_DIR / "runs"
 
 LATEST_MODEL_PATH = ARTIFACT_DIR / "model.joblib"
@@ -11,7 +13,6 @@ LATEST_METRICS_PATH = ARTIFACT_DIR / "metrics.json"
 
 DECISIONS_DIR = DATA_DIR / "decisions"
 
-# Cost assumptions
 COST_FALSE_POSITIVE_REVIEW = 5.0
 COST_MISSED_FRAUD = 200.0
 
