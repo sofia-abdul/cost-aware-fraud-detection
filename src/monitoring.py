@@ -4,6 +4,7 @@ from pathlib import Path
 import datetime as dt
 import pandas as pd
 
+
 def append_batch_log(
     out_path: Path,
     run_id: str,
