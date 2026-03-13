@@ -1,21 +1,24 @@
 from __future__ import annotations
-import numpy as np
 import math
+import numpy as np
 
 
 def expected_cost(y_true, y_pred, cost_fp: float, cost_fn: float) -> float:
-    """
-    Compute total expected cost given predictions.
-    """
+    y_true = np.asarray(y_true)
+    y_pred = np.asarray(y_pred)
+
     fp = ((y_pred == 1) & (y_true == 0)).sum()
     fn = ((y_pred == 0) & (y_true == 1)).sum()
     return float(fp * cost_fp + fn * cost_fn)
 
 
+def _resolve_k(probs, k_frac: float) -> int:
+    if not (0 < k_frac <= 1):
+        raise ValueError(f"k_frac must be in (0, 1], got {k_frac}")
+    return max(1, int(len(probs) * k_frac))
+
+
 def sweep_thresholds(y_true, probs, cost_fp: float, cost_fn: float):
-    """
-    Sweep thresholds from 0.01 to 0.99 and compute expected cost.
-    """
     thresholds = np.linspace(0.01, 0.99, 99)
     results = []
 
@@ -28,46 +31,42 @@ def sweep_thresholds(y_true, probs, cost_fp: float, cost_fn: float):
 
 
 def precision_at_k(y_true, probs, k_frac: float = 0.01) -> float:
-    """
-    Precision among top k% highest-risk transactions.
-    """
-    k = int(len(probs) * k_frac)
+    y_true = np.asarray(y_true)
+    probs = np.asarray(probs)
+
+    k = _resolve_k(probs, k_frac)
     idx = np.argsort(probs)[::-1][:k]
-    return float(y_true.iloc[idx].mean())
+    return float(y_true[idx].mean())
 
 
 def recall_at_k(y_true, probs, k_frac: float = 0.01) -> float:
-    """
-    Recall captured within top k% highest-risk transactions.
-    """
-    k = int(len(probs) * k_frac)
+    y_true = np.asarray(y_true)
+    probs = np.asarray(probs)
+
+    positives = y_true.sum()
+    if positives == 0:
+        return 0.0
+
+    k = _resolve_k(probs, k_frac)
     idx = np.argsort(probs)[::-1][:k]
-    return float(y_true.iloc[idx].sum() / y_true.sum())
+    return float(y_true[idx].sum() / positives)
 
 
 def flag_top_k(probs, k_frac: float = 0.02):
-    """
-    Flag top k% highest probability transactions for review.
-    """
-    k = int(len(probs) * k_frac)
+    probs = np.asarray(probs)
+    k = _resolve_k(probs, k_frac)
     idx = np.argsort(probs)[::-1][:k]
 
-    flags = np.zeros(len(probs))
+    flags = np.zeros(len(probs), dtype=int)
     flags[idx] = 1
     return flags
 
 
 def to_risk_score(prob: float) -> int:
-    """
-    Convert probability to risk score [0–100].
-    """
     return int(math.floor(prob * 100))
 
 
 def bucket(score: int) -> str:
-    """
-    Categorise risk score into operational bucket.
-    """
     if score >= 80:
         return "High"
     if score >= 40:
