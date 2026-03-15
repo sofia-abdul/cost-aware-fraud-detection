@@ -14,11 +14,22 @@ def test_feature_engineering_adds_expected_columns():
 
     transformed = fe.transform(df)
 
-    # New engineered features should exist
     assert "Hour" in transformed.columns
     assert "AmountLog" in transformed.columns
     assert "IsNight" in transformed.columns
 
-    # Raw fields should be removed after transformation
+
+def test_feature_engineering_removes_raw_columns():
+    df = pd.DataFrame({
+        "Time": [0],
+        "Amount": [100],
+        "V1": [0.1],
+    })
+
+    fe = FeatureEngineer()
+    fe.fit(df)
+
+    transformed = fe.transform(df)
+
     assert "Time" not in transformed.columns
     assert "Amount" not in transformed.columns
