@@ -1,183 +1,353 @@
-# Cost-Aware Fraud Ranking System
+# Fraud Risk Review Console
 
-A fraud detection system framed as a cost-sensitive ranking problem under operational review constraints.
+A cost-aware fraud detection system demonstrating the end-to-end lifecycle of a machine learning model, from training and evaluation to operational review workflows and API serving.
 
-This repository focuses on practical ML engineering considerations: asymmetric business cost, limited review capacity, calibrated probabilities, and prediction drift monitoring.
+This project focuses on **operational realism** rather than leaderboard metrics.
+
+It combines:
+
+- cost-optimised model training
+- schema-safe inference
+- a fraud review dashboard
+- monitoring of model behaviour
+- a REST inference API
+- automated tests
+
+The goal is to simulate how a fraud detection system might function in a real operational environment.
 
 ---
 
-## Problem Framing
+## Problem Context
 
-Fraud detection in production is not a pure classification task.
+Fraud detection systems operate under **asymmetric costs**:
 
-Key constraints:
+| Event | Impact |
+|------|------|
+| False positive | Manual review cost |
+| False negative | Direct financial loss |
 
-- Severe class imbalance (~0.17% fraud rate)
-- Asymmetric cost of false positives vs missed fraud
-- Limited manual review capacity
-- Need for probability calibration
-- Risk of distribution shift over time
+Traditional metrics like accuracy or F1 do not capture this trade-off.
 
-This system treats fraud detection as a ranking problem where decisions are made based on cost and operational limits.
+Instead, this system selects decision thresholds by **minimising expected operational cost**:
+
+```
+Expected Cost =
+(False Positives × review cost)
++ (False Negatives × missed fraud cost)
+```
+
+Cost assumptions are configurable in:
+
+```
+src/config.py
+```
 
 ---
 
 ## Dataset
 
-This project uses the publicly available **Credit Card Fraud Detection** dataset:
+This project uses the public **Credit Card Fraud Detection dataset**:
 
-Andrea Dal Pozzolo et al., Université Libre de Bruxelles (ULB)  
-Kaggle: https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud  
+https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud
 
 Dataset characteristics:
 
-- 284,807 transactions  
-- 492 fraud cases (~0.172%)  
-- PCA-transformed features (V1–V28)  
-- Highly imbalanced  
+| Property | Value |
+|------|------|
+| Transactions | 284,807 |
+| Fraud cases | 492 |
+| Fraud rate | 0.17% |
 
-Place the dataset at:
+Features include:
 
-data/raw/creditcard.csv
+- `Time`
+- `Amount`
+- `V1–V28` (PCA-transformed transaction features)
 
-The dataset is not committed to this repository.
-
----
-
-## Approach
-
-### Models
-
-- Logistic Regression (class-weighted baseline)
-- Calibrated Random Forest
-
-### Evaluation
-
-- PR-AUC and ROC-AUC
-- Cost-sensitive threshold optimisation
-- Top-k review simulation
-- Precision@K and Recall@K
-- Baseline prediction logging for drift comparison
-
-### Decision Policies
-
-Two decision strategies are supported:
-
-1. **Threshold-based**
-
-   Minimises expected cost:
-
-   cost = FP_cost × FP + FN_cost × FN
-
-2. **Top-k review**
-
-   Flags the highest-risk k% of transactions to simulate fixed review capacity.
+The PCA transformation means the original raw features are not available, limiting interpretability but preserving privacy.
 
 ---
 
-## Drift Monitoring
+## Model Performance
 
-During training, baseline prediction statistics are logged.
+The current best model is a **cost-optimised logistic regression**.
 
-At inference time, the Streamlit console compares:
+Evaluation on the test set:
 
-- Baseline mean predicted probability
-- Current batch mean predicted probability
-- Delta between baseline and current batch
+| Metric | Value |
+|------|------|
+| ROC-AUC | **0.97** |
+| PR-AUC | **0.71** |
+| Precision @ 1% | **15.3%** |
+| Recall @ 5% | **91.8%** |
 
-Significant deviations are surfaced as drift warnings.
+These results indicate that fraud is highly concentrated in the top-ranked transactions.
 
 ---
 
-## Repository Structure
+## Operational Cost Optimisation
+
+Decision thresholds are selected by **minimising expected fraud cost**.
+
+| Metric | Value |
+|------|------|
+| Optimal threshold | **0.98** |
+| Expected cost (threshold policy) | **2805** |
+| Expected cost (top-2% review policy) | **7050** |
+
+Cost assumptions:
+
+| Event | Cost |
+|------|------|
+| False positive review | $5 |
+| Missed fraud | $200 |
+
+---
+
+## System Architecture
 
 ```
-.
-├── app/                # Streamlit review console
-├── src/
-│   ├── features.py     # Feature engineering
-│   ├── risk.py         # Cost and ranking logic
-│   ├── evaluation.py   # Metrics and analysis utilities
-│   ├── inference.py    # Model loading and schema validation
-│   └── config.py       # Central configuration
-├── tests/              # Unit tests
-├── train.py            # Training entrypoint
-├── notebooks/          # Exploratory analysis
-└── reports/            # Figures / screenshots
+Training Pipeline
+        |
+        v
+Feature Engineering
+        |
+        v
+Model Training
+        |
+        v
+Threshold Optimisation
+        |
+        v
+Model Artifacts
+        |
+        +-----------------------+
+        |                       |
+        v                       v
+Streamlit Review Console     FastAPI Inference API
+        |                       |
+        v                       v
+Review Decisions           Real-time Predictions
+        |
+        v
+Monitoring Logs
 ```
-
-The project separates feature engineering, business logic, evaluation logic, and UI concerns.
 
 ---
 
-## Training
+## Training Pipeline
+
+Training is implemented in:
+
+```
+src/train.py
+```
+
+Steps include:
+
+1. Load dataset  
+2. Train/test split  
+3. Feature engineering  
+4. Model training  
+5. Probability scoring  
+6. Threshold sweep using expected cost  
+7. Model selection  
+8. Artifact persistence  
+
+Artifacts are saved to:
+
+```
+artifacts/
+```
+
+---
+
+## Feature Engineering
+
+Implemented in:
+
+```
+src/features.py
+```
+
+Additional features:
+
+- transaction hour
+- log-transformed amount
+- night transaction indicator
+
+Feature engineering is embedded inside the **scikit-learn pipeline** to prevent training-serving skew.
+
+---
+
+## Streamlit Fraud Review Console
+
+Run the dashboard:
+
+```
+streamlit run app/streamlit_app.py
+```
+
+The dashboard simulates a fraud operations workflow:
+
+- probability distribution visualisation
+- risk bucket segmentation
+- threshold adjustment
+- review queue prioritisation
+- transaction inspection
+- reviewer decision logging
+- prediction drift monitoring
+
+Reviewer actions are stored in:
+
+```
+data/decisions/review_log.csv
+```
+
+---
+
+## Monitoring
+
+Batch scoring metrics are logged to track system behaviour.
+
+Logged metrics include:
+
+- number of transactions scored
+- number flagged for review
+- review rate
+- average fraud probability
+- p95 probability
+
+Logs are stored in:
+
+```
+data/monitoring/
+```
+
+---
+
+## FastAPI Inference API
+
+The trained model can be served through a REST API.
 
 Run:
 
 ```
-python train.py
+uvicorn api.main:app --reload
 ```
 
-Training performs:
+Available endpoints:
 
-- Stratified train/test split
-- Model comparison
-- Cost-sensitive threshold sweep
-- Ranking metric evaluation
-- Baseline statistic logging
-
-Artifacts are written to:
-
-```
-artifacts/runs/
-```
-
----
-
-## Review Console
-
-Launch:
-
-```
-python -m streamlit run app/streamlit_app.py
-```
-
-The console supports:
-
-- Threshold vs Top-k mode
-- Batch CSV upload
-- Cost estimation (if labels present)
-- Risk bucket distribution
-- Transaction inspection
-- Threshold sensitivity analysis
-- Prediction drift panel
+| Endpoint | Purpose |
+|------|------|
+| `/health` | Service health check |
+| `/predict` | Fraud prediction |
+| `/docs` | Interactive Swagger UI |
 
 ---
 
 ## Testing
 
-Core logic is unit tested:
-
-- Cost computation
-- Ranking policy behaviour
-- Feature engineering contracts
-
-Run:
+Run tests with:
 
 ```
 pytest
 ```
 
+Test coverage includes:
+
+- feature engineering
+- risk utilities
+- inference schema validation
+- API health endpoint
+
 ---
 
-## Scope
+## Project Structure
 
-This repository prioritises production-oriented ML design over model novelty.
+```
+fraud-risk/
+│
+├── api/                # FastAPI inference service
+├── app/                # Streamlit dashboard
+├── src/                # training and inference code
+├── tests/              # automated tests
+│
+├── artifacts/          # trained models and metrics
+├── data/               # datasets and logs
+│
+├── requirements.txt
+├── README.md
+└── .gitignore
+```
 
-Focus areas:
+---
 
-- Cost-aware decision logic
-- Ranking under capacity constraints
-- Calibration
-- Basic lifecycle monitoring
-- Modular code organisation
+## Setup
+
+Install dependencies:
+
+```
+pip install -r requirements.txt
+```
+
+---
+
+## Train the Model
+
+```
+python -m src.train
+```
+
+This produces:
+
+```
+artifacts/model.joblib
+artifacts/metrics.json
+```
+
+---
+
+## Run Dashboard
+
+```
+streamlit run app/streamlit_app.py
+```
+
+---
+
+## Run API
+
+```
+uvicorn api.main:app --reload
+```
+
+Open:
+
+```
+http://127.0.0.1:8000/docs
+```
+
+---
+
+## Limitations
+
+- PCA features limit interpretability.
+- The dataset lacks original transaction features.
+- The system focuses on **batch review workflows** rather than streaming fraud detection.
+- Pickled scikit-learn models are version sensitive.
+
+---
+
+## Future Improvements
+
+Potential extensions include:
+
+- SHAP feature attribution
+- automated drift detection
+- streaming inference pipeline
+- database-backed review decisions
+- CI/CD pipelines for training and deployment
+
+---
+
