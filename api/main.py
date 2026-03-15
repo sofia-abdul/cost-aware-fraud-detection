@@ -59,6 +59,16 @@ def load_model():
 model = load_model()
 
 
+@app.get("/")
+def root():
+    return {
+        "message": "Fraud Detection API is running",
+        "health": "/health",
+        "docs": "/docs",
+        "predict": "/predict",
+    }
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
